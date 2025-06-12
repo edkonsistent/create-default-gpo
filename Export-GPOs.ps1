@@ -1,71 +1,50 @@
 # Export-GPOs.ps1
-
 Import-Module GroupPolicy
 
-# Setup paths
+# Display usage instructions
+Write-Host "`nThis script exports selected GPOs from your domain."
+Write-Host "Backups will be saved into a folder next to this script."
+Write-Host "If LGPO.exe is needed, download it from:"
+Write-Host "  https://repository.konsistent.co/repository/packages/Utilities/LGPO/LGPO.exe`n"
+
+# Setup export directory
 $timestamp = Get-Date -Format "yyyy-MM-dd"
 $exportRoot = Join-Path $PSScriptRoot "Exported-GPOs-$timestamp"
-$lgpoExe = Join-Path $PSScriptRoot "LGPO.exe"
+New-Item -ItemType Directory -Path $exportRoot -Force | Out-Null
+Write-Host "Export folder created: $exportRoot`n"
 
-# Check for LGPO.exe
-if (-not (Test-Path $lgpoExe)) {
-    Write-Host ""
-    Write-Host "ERROR: LGPO.exe not found in script directory." -ForegroundColor Red
-    Write-Host "Please download it from:" -ForegroundColor Yellow
-    Write-Host "  https://repository.konsistent.co/repository/packages/Utilities/LGPO/LGPO.exe"
-    Write-Host "Then place it next to this script and re-run."
+# Get all GPOs
+$allGpos = Get-GPO -All
+if (-not $allGpos) {
+    Write-Host "No GPOs found in the domain. Exiting."
     exit 1
 }
 
-# Sanitize GPO name for folder usage
-function Get-SafeFolderName {
-    param ($name)
-    return ($name -replace '[\\/:*?"<>|]', '_')
+# Selectively include GPOs
+$selectedGpos = @()
+Write-Host "Select GPOs to export. Type 'y' or press ENTER to include, or 'n' to skip:`n"
+foreach ($gpo in $allGpos) {
+    $input = Read-Host "Include GPO: $($gpo.DisplayName)? [Y/n]"
+    if ($input -eq '' -or $input -match '^(y|Y)$') {
+        $selectedGpos += $gpo
+    }
 }
 
-# Create export root folder
-New-Item -Path $exportRoot -ItemType Directory -Force | Out-Null
-Write-Host ""
-Write-Host "Export folder created: $exportRoot"
+if ($selectedGpos.Count -eq 0) {
+    Write-Host "`nNo GPOs selected. Exiting."
+    exit 0
+}
 
-# Track export results
-$exportedCount = 0
-$failedCount = 0
-
-# Export all GPOs
-Get-GPO -All | ForEach-Object {
-    $gpo = $_
-    $safeName = Get-SafeFolderName $gpo.DisplayName
-    $backupPath = Join-Path $exportRoot $safeName
-
-    Write-Host "Backing up GPO: $($gpo.DisplayName)"
-
+# Backup each selected GPO
+foreach ($gpo in $selectedGpos) {
     try {
-        # Create target folder for GPO
-        New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
-
-        # Export using Backup-GPO
-        Backup-GPO -Name $gpo.DisplayName -Path $backupPath -ErrorAction Stop
-
-        # Export local policy (LGPO)
-        Start-Process -FilePath $lgpoExe -ArgumentList "/b `"$backupPath`"" -NoNewWindow -Wait
-
-        $exportedCount++
+        Write-Host "`nBacking up GPO: $($gpo.DisplayName)"
+        $null = Backup-GPO -Name $gpo.DisplayName -Path $exportRoot -ErrorAction Stop
     }
     catch {
-        Write-Host "Failed to export: $($gpo.DisplayName) - $($_.Exception.Message)" -ForegroundColor Red
-        $failedCount++
+        Write-Host "Failed to export $($gpo.DisplayName): $($_.Exception.Message)" -ForegroundColor Red
     }
 }
 
-# Summary
-Write-Host ""
-if ($exportedCount -gt 0) {
-    Write-Host "$exportedCount GPO(s) successfully exported to: $exportRoot" -ForegroundColor Green
-} else {
-    Write-Host "No GPOs were successfully exported." -ForegroundColor Red
-}
-
-if ($failedCount -gt 0) {
-    Write-Host "$failedCount GPO(s) failed to export." -ForegroundColor Yellow
-}
+Write-Host "`nExport completed. You can now re-import using Import-GPO against this folder:"
+Write-Host "$exportRoot"
