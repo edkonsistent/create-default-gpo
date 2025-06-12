@@ -1,70 +1,80 @@
-# Import-GPOs.ps1
+<#
+.SYNOPSIS
+    Imports GPOs from a folder created by Export-GPOs.ps1
+
+.DESCRIPTION
+    Reads each subfolder in the specified backup folder, extracts DisplayName from the XML, and imports GPOs into the domain.
+
+.PARAMETER ImportFolder
+    The root folder containing subfolders with backup.xml
+
+.EXAMPLE
+    .\Import-GPOs.ps1 "C:\Path\To\Exported-GPOs"
+#>
 
 param (
-    [string]$GpoContainerPath
+    [string]$ImportFolder
 )
 
-Import-Module GroupPolicy
-
-# Show usage help if no path was given
-if (-not $GpoContainerPath) {
-    Write-Host ""
-    Write-Host "ERROR: No GPO folder path specified." -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Usage:"
-    Write-Host "  .\Import-GPOs.ps1 <PathToExportedGPOs>" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "Example:"
-    Write-Host "  .\Import-GPOs.ps1 `"C:\Exports\Exported-GPOs-2025-06-12`""
+# Usage
+if (-not $ImportFolder) {
+    Write-Host "`nUSAGE: Import-GPOs.ps1 <PathToExportedGPOsFolder>" -ForegroundColor Yellow
+    Write-Host "Example: .\Import-GPOs.ps1 'C:\Exported-GPOs-2025-06-12'"
     exit 1
 }
 
-# Check for LGPO.exe next to script
-$lgpoExe = Join-Path $PSScriptRoot "LGPO.exe"
-if (-not (Test-Path $lgpoExe)) {
-    Write-Host ""
-    Write-Host "ERROR: LGPO.exe not found in script directory." -ForegroundColor Red
-    Write-Host "Please download it from: https://repository.konsistent.co/repository/packages/Utilities/LGPO/LGPO.exe"
-    Write-Host "Then place it next to this script and re-run."
+if (-not (Test-Path $ImportFolder)) {
+    Write-Host "`nERROR: Folder not found: $ImportFolder" -ForegroundColor Red
     exit 1
 }
 
-# Validate GPO container path
-if (-not (Test-Path $GpoContainerPath)) {
-    Write-Host ""
-    Write-Host "ERROR: Specified folder does not exist: $GpoContainerPath" -ForegroundColor Red
-    exit 1
+Write-Host "`nImporting GPOs from: $ImportFolder`n"
+
+$gpoFolders = Get-ChildItem -Path $ImportFolder -Directory
+if ($gpoFolders.Count -eq 0) {
+    Write-Host "No GPO folders found in: $ImportFolder" -ForegroundColor Yellow
+    exit 0
 }
-
-Write-Host ""
-Write-Host "Importing GPOs from: $GpoContainerPath"
-
-# Get all subfolders (each representing a GPO)
-$gpoFolders = Get-ChildItem -Path $GpoContainerPath -Directory
 
 foreach ($folder in $gpoFolders) {
-    $gpoName = $folder.Name
+    $backupXmlPath = Join-Path $folder.FullName "backup.xml"
+
+    if (-not (Test-Path $backupXmlPath)) {
+        Write-Host "Skipping: $($folder.Name) — backup.xml not found." -ForegroundColor Yellow
+        continue
+    }
 
     try {
-        # Ensure the GPO exists
-        if (-not (Get-GPO -Name $gpoName -ErrorAction SilentlyContinue)) {
-            Write-Host "Creating GPO: $gpoName"
-            New-GPO -Name $gpoName | Out-Null
-        } else {
-            Write-Host "GPO already exists: $gpoName"
+        [xml]$xml = Get-Content $backupXmlPath
+        $nsMgr = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+        $nsMgr.AddNamespace("bkp", "http://www.microsoft.com/GroupPolicy/GPOOperations")
+
+        $displayNameNode = $xml.SelectSingleNode("//bkp:GroupPolicyCoreSettings/bkp:DisplayName", $nsMgr)
+        if (-not $displayNameNode -or $displayNameNode.InnerText.Trim() -eq "") {
+            Write-Host "Skipping: $($folder.Name) — DisplayName not found in XML." -ForegroundColor Yellow
+            continue
         }
 
-        # Import domain policy settings
-        Write-Host "Importing domain GPO: $gpoName"
-        Import-GPO -Path $folder.FullName -TargetName $gpoName -CreateIfNeeded -ErrorAction Stop
+        $displayName = $displayNameNode.InnerText.Trim()
+        $userInput = Read-Host "Import GPO: '$displayName'? [Y/n]"
+        if ($userInput -ne "" -and $userInput -notmatch "^(y|Y)$") {
+            Write-Host "Skipped: $displayName" -ForegroundColor Yellow
+            continue
+        }
 
-        # Import local policy content using LGPO
-        Start-Process -FilePath $lgpoExe -ArgumentList "/g `"$folder.FullName`"" -NoNewWindow -Wait
+        if (-not (Get-GPO -Name $displayName -ErrorAction SilentlyContinue)) {
+            Write-Host "Creating GPO: $displayName"
+            New-GPO -Name $displayName | Out-Null
+        } else {
+            Write-Host "GPO already exists: $displayName — overwriting."
+        }
+
+        Import-GPO -BackupGpoName $displayName -Path $ImportFolder -TargetName $displayName -CreateIfNeeded -ErrorAction Stop
+        Write-Host "Imported: $displayName" -ForegroundColor Green
     }
     catch {
-        Write-Host "Failed to import: $gpoName - $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Failed to import '$displayName': $($_.Exception.Message)" -ForegroundColor Red
     }
 }
 
-Write-Host ""
-Write-Host "All GPOs imported from: $GpoContainerPath"
+Write-Host "`nAll imports complete."
