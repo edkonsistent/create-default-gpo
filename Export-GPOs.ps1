@@ -4,8 +4,6 @@ Import-Module GroupPolicy
 # Display usage instructions
 Write-Host "`nThis script exports selected GPOs from your domain."
 Write-Host "Backups will be saved into a folder next to this script."
-Write-Host "If LGPO.exe is needed, download it from:"
-Write-Host "  https://repository.konsistent.co/repository/packages/Utilities/LGPO/LGPO.exe`n"
 
 # Setup export directory
 $timestamp = Get-Date -Format "yyyy-MM-dd"

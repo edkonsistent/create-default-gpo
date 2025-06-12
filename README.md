@@ -27,4 +27,4 @@ Imports GPOs from a specified folder back into the domain. This includes both do
 - `LGPO.exe` (must be placed in the same directory as the scripts)
 
 ### Download `LGPO.exe`
-You can get it from the Konsistent repository:
+You can get it from the Konsistent repository: https://repository.konsistent.co/repository/packages/Utilities/LGPO/LGPO.exe
