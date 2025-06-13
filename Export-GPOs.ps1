@@ -1,48 +1,61 @@
-# Export-GPOs.ps1
-Import-Module GroupPolicy
+# Export-GPO.ps1
+# Backs up selected domain GPOs into individual subfolders inside GPO_Backup_YYYYMMDD
 
-# Display usage instructions
-Write-Host "`nThis script exports selected GPOs from your domain."
-Write-Host "Backups will be saved into a folder next to this script."
-
-# Setup export directory
-$timestamp = Get-Date -Format "yyyy-MM-dd"
-$exportRoot = Join-Path $PSScriptRoot "Exported-GPOs-$timestamp"
-New-Item -ItemType Directory -Path $exportRoot -Force | Out-Null
-Write-Host "Export folder created: $exportRoot`n"
-
-# Get all GPOs
-$allGpos = Get-GPO -All
-if (-not $allGpos) {
-    Write-Host "No GPOs found in the domain. Exiting."
+# Ensure GPMC module is available
+if (-not (Get-Command Backup-GPO -ErrorAction SilentlyContinue)) {
+    Write-Error "The GroupPolicy module is not available. Please install RSAT: Group Policy Management Tools."
     exit 1
 }
 
-# Selectively include GPOs
-$selectedGpos = @()
-Write-Host "Select GPOs to export. Type 'y' or press ENTER to include, or 'n' to skip:`n"
-foreach ($gpo in $allGpos) {
-    $input = Read-Host "Include GPO: $($gpo.DisplayName)? [Y/n]"
-    if ($input -eq '' -or $input -match '^(y|Y)$') {
-        $selectedGpos += $gpo
-    }
+# Get script directory
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+
+# Create dated output folder
+$dateStr = (Get-Date).ToString("yyyyMMdd")
+$backupRoot = Join-Path $scriptDir "GPO_Backup_$dateStr"
+New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
+
+# Get all GPOs in the domain
+$gpos = Get-GPO -All | Sort-Object DisplayName
+
+if (-not $gpos) {
+    Write-Host "No GPOs found in the domain."
+    exit 1
 }
 
-if ($selectedGpos.Count -eq 0) {
-    Write-Host "`nNo GPOs selected. Exiting."
+# Let user select GPOs via Out-GridView (multi-select enabled)
+try {
+    $selected = $gpos |
+        Select-Object DisplayName, Id |
+        Out-GridView -Title "Select GPOs to Back Up (hold Ctrl or Shift to select multiple)" -OutputMode Multiple
+} catch {
+    Write-Error "Out-GridView is not available. Run this in Windows PowerShell with GUI support."
+    exit 1
+}
+
+if (-not $selected) {
+    Write-Host "No GPOs selected. Exiting."
     exit 0
 }
 
-# Backup each selected GPO
-foreach ($gpo in $selectedGpos) {
+# Function to sanitize folder names
+function Sanitize-Name {
+    param ($name)
+    return ($name -replace '[\\/:*?"<>|]', '_')
+}
+
+# Back up each selected GPO to its own subfolder
+foreach ($gpo in $selected) {
+    $safeName = Sanitize-Name $gpo.DisplayName
+    $gpoFolder = Join-Path $backupRoot $safeName
+    New-Item -ItemType Directory -Path $gpoFolder -Force | Out-Null
+
+    Write-Host "Backing up GPO: $($gpo.DisplayName) to $gpoFolder"
     try {
-        Write-Host "`nBacking up GPO: $($gpo.DisplayName)"
-        $null = Backup-GPO -Name $gpo.DisplayName -Path $exportRoot -ErrorAction Stop
-    }
-    catch {
-        Write-Host "Failed to export $($gpo.DisplayName): $($_.Exception.Message)" -ForegroundColor Red
+        Backup-GPO -Name $gpo.DisplayName -Path $gpoFolder -ErrorAction Stop
+    } catch {
+        Write-Warning "Failed to back up '$($gpo.DisplayName)': $_"
     }
 }
 
-Write-Host "`nExport completed. You can now re-import using Import-GPO against this folder:"
-Write-Host "$exportRoot"
+Write-Host "`nBackup complete. GPOs saved to: $backupRoot"
