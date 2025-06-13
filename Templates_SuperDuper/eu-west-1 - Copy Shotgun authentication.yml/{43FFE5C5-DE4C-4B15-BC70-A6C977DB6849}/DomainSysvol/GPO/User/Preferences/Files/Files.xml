@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Files clsid="{215B2E53-57CE-475c-80FE-9EEC14635851}"><File clsid="{50BE44C8-567A-4ed1-B1D0-9234FE1F38AF}" name="authentication.yml" status="authentication.yml" image="2" changed="2025-02-24 10:41:41" uid="{74423424-4852-49D6-B222-427C3307CAD4}"><Properties action="U" fromPath="\\superduperstudio.xyz\SysVol\superduperstudio.xyz\Policies\{D9563F85-F562-4489-91AF-AC154603BD93}\User\authentication.yml" targetPath="%HOMEDRIVE%%HOMEPATH%\AppData\Roaming\Shotgun\authentication.yml" readOnly="0" archive="1" hidden="0" suppress="0"/></File>
+</Files>
