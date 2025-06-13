@@ -81,3 +81,16 @@ Exported-GPOs-2025-06-12\
 The script uses `backup.xml` to determine the GPO’s DisplayName. The folder name (GUID) is never used as a fallback.
 
 ---
+
+
+HOW TO EXPORT A MIGRATION TABLE:
+✅ GUI Instructions
+Open gpmc.msc
+
+Right-click Group Policy Objects
+
+Select "Open Migration Table Editor"
+
+Use Tools > Populate from GPO or Populate from Backup
+
+Save the .migtable file
